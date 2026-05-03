@@ -471,6 +471,8 @@
         <button id="clearLoop" class="danger" type="button">解除</button>
       </div>
 
+      <button id="igDirectBtn" type="button" style="display:none">▶ 全機能で再生（動画を取得）</button>
+
       <div id="status" class="status">ピッチ変更は再生開始後に有効になります。</div>
     </section>
   </main>
@@ -510,6 +512,7 @@
       volume: $("volume"),
       volumeValue: $("volumeValue"),
       recBtn: $("recBtn"),
+      igDirectBtn: $("igDirectBtn"),
       status: $("status")
     };
 
@@ -524,6 +527,7 @@
       youtubePlayer: null,
       youtubePlayerReady: false,
       youtubeState: -1,
+      instagramShortcode: "",
       recActive: false,
       recorder: null,
       recChunks: [],
@@ -830,6 +834,8 @@
         el.disabled = instagram;
       });
 
+      els.igDirectBtn.style.display = instagram ? "" : "none";
+
       updatePlayButton();
       updateTimeline();
     }
@@ -889,10 +895,11 @@
       setMode("instagram");
 
       // Build embed iframe (logged-in users see full player; others see preview)
+      state.instagramShortcode = shortcode;
       els.instagramPlayer.innerHTML =
         `<iframe src="https://www.instagram.com/p/${shortcode}/embed/" allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
 
-      setStatus("Instagram動画を読み込みました。再生はプレイヤー内で操作してください（ピッチ・速度・ループは使用不可）。");
+      setStatus("読み込みました。▶ボタンで動画を取得すると速度・ピッチ・ループも使えます。");
     }
 
     function extractYoutubeId(value) {
@@ -985,6 +992,106 @@
         state.youtubePlayer = new YT.Player("youtubePlayer", options);
       }
     }
+
+    // ── Instagram direct fetch ───────────────────────────────────
+    const IG_PROXIES = [
+      u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+      u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    ];
+
+    const IG_PATTERNS = [
+      /"video_url"\s*:\s*"([^"]+)"/,
+      /"playable_url"\s*:\s*"([^"]+)"/,
+      /"contentUrl"\s*:\s*"([^"]+)"/,
+      /property="og:video"\s+content="([^"]+)"/,
+      /property="og:video:secure_url"\s+content="([^"]+)"/,
+      /<video[^>]+src="(https:[^"]+\.mp4[^"]*)"/,
+    ];
+
+    function igDecodeUrl(raw) {
+      return raw
+        .replace(/\\u0026/g, "&").replace(/\\u002F/g, "/")
+        .replace(/\\u003C/g, "<").replace(/\\u003E/g, ">")
+        .replace(/\\\//g, "/").replace(/\\"/g, '"');
+    }
+
+    async function fetchInstagramVideoUrl(shortcode) {
+      const endpoints = [
+        `https://www.instagram.com/p/${shortcode}/embed/captioned/`,
+        `https://www.instagram.com/p/${shortcode}/embed/`,
+        `https://www.instagram.com/p/${shortcode}/`,
+      ];
+      for (const proxy of IG_PROXIES) {
+        for (const ep of endpoints) {
+          try {
+            const res = await fetch(proxy(ep), { signal: AbortSignal.timeout(12000) });
+            if (!res.ok) continue;
+            const html = await res.text();
+            for (const pat of IG_PATTERNS) {
+              const m = html.match(pat);
+              if (m) {
+                const url = igDecodeUrl(m[1]);
+                if (url.startsWith("http")) return url;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+      throw new Error("動画URLを取得できませんでした");
+    }
+
+    async function loadInstagramDirect() {
+      const shortcode = state.instagramShortcode;
+      if (!shortcode) return;
+      els.igDirectBtn.disabled = true;
+      setStatus("Instagram動画を取得中...");
+      try {
+        const videoUrl = await fetchInstagramVideoUrl(shortcode);
+        // Switch to local-like mode with the remote video URL
+        els.stage.classList.remove("instagram-mode");
+        els.stage.classList.add("has-media");
+        els.instagramPlayer.innerHTML = "";
+        state.mode = "local";
+        els.igDirectBtn.style.display = "none";
+
+        // Re-enable all controls
+        [els.playBtn, els.muteBtn, els.seek, els.speed, els.speedDown, els.speedUp,
+         els.speedReset, els.pitch, els.pitchDown, els.pitchUp, els.pitchReset,
+         els.setA, els.setB, els.loopToggle, els.clearLoop, els.volume].forEach(el => {
+          el.disabled = false;
+        });
+
+        state.loopA = null; state.loopB = null; state.loopEnabled = false;
+        updateLoopUi();
+
+        // Load video — try anonymous first for Web Audio support
+        els.video.crossOrigin = "anonymous";
+        els.video.src = videoUrl;
+        els.video.load();
+        els.filename.textContent = `Instagram: ${shortcode}`;
+
+        // If CORS blocks anonymous, fall back without crossOrigin
+        els.video.onerror = () => {
+          els.video.onerror = null;
+          els.video.removeAttribute("crossOrigin");
+          els.video.src = videoUrl;
+          els.video.load();
+          setStatus("動画を読み込みました（クロスオリジン制限によりピッチ変更は使用不可）。");
+        };
+
+        setStatus("動画を取得しました。速度・ピッチ・ループ・録画が使えます。");
+        updatePlayButton();
+        updateTimeline();
+      } catch (e) {
+        setStatus(`取得失敗: ${e.message}。Instagramにログイン済みか、動画が公開設定か確認してください。`);
+      } finally {
+        els.igDirectBtn.disabled = false;
+      }
+    }
+
+    els.igDirectBtn.addEventListener("click", () => {
+      loadInstagramDirect().catch(() => setStatus("動画の取得に失敗しました。"));
+    });
 
     // ── Recording ───────────────────────────────────────────────
     let recCanvas = null, recAnimId = null;
