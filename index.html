@@ -353,13 +353,26 @@
       border-color: rgba(79, 209, 165, .55);
       color: var(--accent);
     }
+
+    /* Zoom/pan */
+    #mediaWrap {
+      width: 100%;
+      height: 100%;
+      transform-origin: center center;
+      will-change: transform;
+    }
+
+    .stage.zoomed { cursor: grab; }
+    .stage.dragging { cursor: grabbing; }
   </style>
 </head>
 <body>
   <main class="app">
     <section id="stage" class="stage" aria-label="動画プレイヤー">
-      <video id="video" playsinline preload="metadata"></video>
-      <div id="youtubePlayer" class="youtube-player"></div>
+      <div id="mediaWrap">
+        <video id="video" playsinline preload="metadata"></video>
+        <div id="youtubePlayer" class="youtube-player"></div>
+      </div>
       <div id="empty" class="empty">
         <div>
           <strong>動画を選択してください</strong>
@@ -367,6 +380,7 @@
         </div>
       </div>
     </section>
+
 
     <section class="controls" aria-label="練習コントロール">
       <div class="file-actions">
@@ -1063,6 +1077,159 @@
     updatePitch();
     updateTimeline();
     updateLoopUi();
+
+    // ── Zoom / pan ──────────────────────────────────────────────
+    const mediaWrap = document.getElementById("mediaWrap");
+    const zoomState = { scale: 1, panX: 0, panY: 0 };
+
+    function applyZoom() {
+      const { scale, panX, panY } = zoomState;
+      mediaWrap.style.transform = scale > 1
+        ? `translate(${panX}px,${panY}px) scale(${scale})`
+        : "";
+      els.stage.classList.toggle("zoomed", scale > 1);
+    }
+
+    function resetZoom() {
+      zoomState.scale = 1; zoomState.panX = 0; zoomState.panY = 0;
+      applyZoom();
+    }
+
+    function clampPan() {
+      const rect = els.stage.getBoundingClientRect();
+      const mx = rect.width  * (zoomState.scale - 1) / 2;
+      const my = rect.height * (zoomState.scale - 1) / 2;
+      zoomState.panX = Math.min(mx, Math.max(-mx, zoomState.panX));
+      zoomState.panY = Math.min(my, Math.max(-my, zoomState.panY));
+    }
+
+    // Mouse wheel zoom (works over local video; YouTube iframe blocks it on desktop)
+    els.stage.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const rect = els.stage.getBoundingClientRect();
+      const mx = e.clientX - rect.left - rect.width  / 2;
+      const my = e.clientY - rect.top  - rect.height / 2;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      const newScale = Math.min(8, Math.max(1, zoomState.scale * factor));
+      if (newScale !== zoomState.scale) {
+        const ratio = newScale / zoomState.scale;
+        zoomState.panX = mx - (mx - zoomState.panX) * ratio;
+        zoomState.panY = my - (my - zoomState.panY) * ratio;
+        zoomState.scale = newScale;
+        if (zoomState.scale <= 1) { zoomState.scale = 1; zoomState.panX = 0; zoomState.panY = 0; }
+        clampPan();
+        applyZoom();
+      }
+    }, { passive: false });
+
+    // Mouse drag (pan when zoomed)
+    let mouseDragging = false, mouseDragX = 0, mouseDragY = 0, mouseDragPanX = 0, mouseDragPanY = 0, mouseMoved = false;
+
+    els.stage.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch") return;
+      if (zoomState.scale <= 1) return;
+      mouseDragging = true; mouseMoved = false;
+      mouseDragX = e.clientX; mouseDragY = e.clientY;
+      mouseDragPanX = zoomState.panX; mouseDragPanY = zoomState.panY;
+      els.stage.setPointerCapture(e.pointerId);
+      els.stage.classList.add("dragging");
+    });
+
+    els.stage.addEventListener("pointermove", (e) => {
+      if (!mouseDragging || e.pointerType === "touch") return;
+      const dx = e.clientX - mouseDragX, dy = e.clientY - mouseDragY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseMoved = true;
+      zoomState.panX = mouseDragPanX + dx;
+      zoomState.panY = mouseDragPanY + dy;
+      clampPan();
+      applyZoom();
+    });
+
+    els.stage.addEventListener("pointerup", () => {
+      mouseDragging = false;
+      els.stage.classList.remove("dragging");
+    });
+
+    // Double-click to reset zoom
+    els.stage.addEventListener("dblclick", () => { if (zoomState.scale > 1) resetZoom(); });
+
+    // Touch: pinch-to-zoom + 2-finger drag (capture phase catches events over YouTube iframe)
+    let pinchActive = false, touchDragActive = false, touchMoved = false;
+    let pinchInitDist = 1, pinchInitScale = 1, pinchInitPanX = 0, pinchInitPanY = 0, pinchInitMidX = 0, pinchInitMidY = 0;
+    let touchDragStartX = 0, touchDragStartY = 0, touchDragPanX = 0, touchDragPanY = 0;
+    let lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+
+    function touchMidpoint(touches, rect) {
+      return {
+        x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left - rect.width  / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top  - rect.height / 2
+      };
+    }
+
+    function touchDistance(touches) {
+      return Math.hypot(touches[1].clientX - touches[0].clientX, touches[1].clientY - touches[0].clientY);
+    }
+
+    els.stage.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinchActive = true; touchDragActive = false; touchMoved = false;
+        const rect = els.stage.getBoundingClientRect();
+        pinchInitDist  = touchDistance(e.touches);
+        pinchInitScale = zoomState.scale;
+        pinchInitPanX  = zoomState.panX;
+        pinchInitPanY  = zoomState.panY;
+        const mid = touchMidpoint(e.touches, rect);
+        pinchInitMidX = mid.x; pinchInitMidY = mid.y;
+      } else if (e.touches.length === 1 && zoomState.scale > 1) {
+        e.preventDefault();
+        touchDragActive = true; pinchActive = false; touchMoved = false;
+        touchDragStartX = e.touches[0].clientX; touchDragStartY = e.touches[0].clientY;
+        touchDragPanX = zoomState.panX; touchDragPanY = zoomState.panY;
+      }
+    }, { passive: false, capture: true });
+
+    els.stage.addEventListener("touchmove", (e) => {
+      if (e.touches.length === 2 && pinchActive) {
+        e.preventDefault();
+        touchMoved = true;
+        const rect = els.stage.getBoundingClientRect();
+        const dist = touchDistance(e.touches);
+        const newScale = Math.min(8, Math.max(1, pinchInitScale * dist / pinchInitDist));
+        const mid = touchMidpoint(e.touches, rect);
+        const ratio = newScale / pinchInitScale;
+        zoomState.panX = mid.x - (pinchInitMidX - pinchInitPanX) * ratio;
+        zoomState.panY = mid.y - (pinchInitMidY - pinchInitPanY) * ratio;
+        zoomState.scale = newScale;
+        if (zoomState.scale <= 1) { zoomState.scale = 1; zoomState.panX = 0; zoomState.panY = 0; }
+        clampPan();
+        applyZoom();
+      } else if (e.touches.length === 1 && touchDragActive) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - touchDragStartX;
+        const dy = e.touches[0].clientY - touchDragStartY;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) touchMoved = true;
+        zoomState.panX = touchDragPanX + dx;
+        zoomState.panY = touchDragPanY + dy;
+        clampPan();
+        applyZoom();
+      }
+    }, { passive: false, capture: true });
+
+    els.stage.addEventListener("touchend", (e) => {
+      // Double-tap to reset zoom
+      if (e.changedTouches.length === 1 && e.touches.length === 0 && !touchMoved) {
+        const now = Date.now();
+        const x = e.changedTouches[0].clientX, y = e.changedTouches[0].clientY;
+        if (now - lastTapTime < 300 && Math.abs(x - lastTapX) < 40 && Math.abs(y - lastTapY) < 40) {
+          if (zoomState.scale > 1) resetZoom();
+        }
+        lastTapTime = now; lastTapX = x; lastTapY = y;
+      }
+      if (e.touches.length === 0) {
+        pinchActive = false; touchDragActive = false; touchMoved = false;
+      }
+    }, { capture: true });
   </script>
 </body>
 </html>
