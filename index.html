@@ -528,6 +528,7 @@
       youtubePlayerReady: false,
       youtubeState: -1,
       instagramShortcode: "",
+      instagramOrigUrl: "",
       recActive: false,
       recorder: null,
       recChunks: [],
@@ -896,6 +897,7 @@
 
       // Build embed iframe (logged-in users see full player; others see preview)
       state.instagramShortcode = shortcode;
+      state.instagramOrigUrl = els.youtubeUrl.value.trim().split("?")[0].replace(/\/$/, "") + "/";
       els.instagramPlayer.innerHTML =
         `<iframe src="https://www.instagram.com/p/${shortcode}/embed/" allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
 
@@ -998,10 +1000,14 @@
       const res = await fetch("https://api.cobalt.tools/", {
         method: "POST",
         headers: { "Accept": "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ url: igUrl, downloadMode: "auto" }),
+        body: JSON.stringify({ url: igUrl }),
         signal: AbortSignal.timeout(20000),
       });
-      if (!res.ok) throw new Error(`cobalt HTTP ${res.status}`);
+      if (!res.ok) {
+        let msg = `cobalt HTTP ${res.status}`;
+        try { const e = await res.json(); msg = e.error?.code || msg; } catch (_) {}
+        throw new Error(msg);
+      }
       const data = await res.json();
       if (data.status === "redirect" || data.status === "tunnel") return data.url;
       if (data.status === "picker") {
@@ -1012,7 +1018,7 @@
     }
 
     async function fetchInstagramVideoUrl(shortcode) {
-      const igUrl = `https://www.instagram.com/p/${shortcode}/`;
+      const igUrl = state.instagramOrigUrl || `https://www.instagram.com/p/${shortcode}/`;
       return fetchViaCobalt(igUrl);
     }
 
