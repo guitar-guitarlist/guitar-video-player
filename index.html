@@ -348,6 +348,8 @@
       grid-column: 1 / -1;
     }
 
+    .loop-grid button { font-size: 13px; }
+
     /* A-B loop: ON state — prominent green like primary button */
     .loop-on {
       background: var(--accent) !important;
@@ -425,7 +427,7 @@
 
       <div class="control-box volume-box">
         <div class="control-title">音量</div>
-        <input id="volume" type="range" min="0" max="100" step="1" value="100" aria-label="音量">
+        <input id="volume" type="range" min="0" max="200" step="1" value="100" aria-label="音量">
         <div id="volumeValue" class="value">100%</div>
       </div>
 
@@ -532,7 +534,8 @@
       pitchNode: null,
       silentGain: null,
       directGain: null,
-      pitchGain: null
+      pitchGain: null,
+      masterGain: null
     };
 
     function workletUrl() {
@@ -623,6 +626,16 @@
       return h ? `${h}:${m.toString().padStart(2, "0")}:${s}` : `${m}:${s}`;
     }
 
+    function formatTimeFull(seconds) {
+      if (!Number.isFinite(seconds)) return "0:00.00";
+      const safe = Math.max(0, seconds);
+      const h  = Math.floor(safe / 3600);
+      const m  = Math.floor((safe % 3600) / 60);
+      const s  = Math.floor(safe % 60).toString().padStart(2, "0");
+      const cs = Math.floor((safe % 1) * 100).toString().padStart(2, "0");
+      return h ? `${h}:${m.toString().padStart(2, "0")}:${s}.${cs}` : `${m}:${s}.${cs}`;
+    }
+
     function currentDuration() {
       if (state.mode === "youtube" && state.youtubePlayerReady) {
         return state.youtubePlayer.getDuration() || 0;
@@ -676,8 +689,8 @@
     function updateLoopUi() {
       const aSet = state.loopA != null;
       const bSet = state.loopB != null;
-      els.setA.textContent = aSet ? `A ${formatTime(state.loopA)}` : "Aを設定";
-      els.setB.textContent = bSet ? `B ${formatTime(state.loopB)}` : "Bを設定";
+      els.setA.textContent = aSet ? `A ${formatTimeFull(state.loopA)}` : "Aを設定";
+      els.setB.textContent = bSet ? `B ${formatTimeFull(state.loopB)}` : "Bを設定";
       els.setA.classList.toggle("loop-point-set", aSet);
       els.setB.classList.toggle("loop-point-set", bSet);
       els.loopToggle.textContent = state.loopEnabled ? "ループ: ON" : "ループ: OFF";
@@ -690,11 +703,13 @@
       return Math.pow(2, -Number(els.pitch.value) / 12);
     }
 
-    function updateVolume() {
+    async function updateVolume() {
       const vol = Number(els.volume.value);
       els.volumeValue.textContent = `${vol}%`;
+
       if (state.mode === "youtube" && state.youtubePlayerReady) {
-        state.youtubePlayer.setVolume(vol);
+        // YouTube API tops out at 100
+        state.youtubePlayer.setVolume(Math.min(100, vol));
         if (vol === 0) {
           state.youtubePlayer.mute();
           els.muteBtn.textContent = "ミュート解除";
@@ -702,15 +717,28 @@
           state.youtubePlayer.unMute();
           els.muteBtn.textContent = "ミュート";
         }
+        return;
+      }
+
+      // Local video: use masterGain for amplification above 100%
+      if (vol > 100 && !state.audioReady) {
+        await setupAudio();
+        if (state.audioCtx?.state === "suspended") await state.audioCtx.resume();
+      }
+
+      if (state.audioReady && state.masterGain) {
+        els.video.volume = 1;
+        state.masterGain.gain.setTargetAtTime(vol / 100, state.audioCtx.currentTime, 0.01);
       } else {
-        els.video.volume = vol / 100;
-        if (vol === 0) {
-          els.video.muted = true;
-          els.muteBtn.textContent = "ミュート解除";
-        } else if (els.video.muted) {
-          els.video.muted = false;
-          els.muteBtn.textContent = "ミュート";
-        }
+        els.video.volume = Math.min(1, vol / 100);
+      }
+
+      if (vol === 0) {
+        els.video.muted = true;
+        els.muteBtn.textContent = "ミュート解除";
+      } else if (els.video.muted) {
+        els.video.muted = false;
+        els.muteBtn.textContent = "ミュート";
       }
     }
 
@@ -765,14 +793,17 @@
           outputChannelCount: [2]
         });
 
+        state.masterGain = state.audioCtx.createGain();
+        state.masterGain.gain.value = Math.max(0, Number(els.volume.value)) / 100;
+
         state.silentGain.gain.value = 0;
         state.directGain.gain.value = Number(els.pitch.value) === 0 ? 1 : 0;
         state.pitchGain.gain.value = Number(els.pitch.value) === 0 ? 0 : 1;
         state.pitchNode.parameters.get("ratio").value = pitchRatio();
 
         state.source.connect(state.silentGain).connect(state.audioCtx.destination);
-        state.source.connect(state.directGain).connect(state.audioCtx.destination);
-        state.source.connect(state.pitchNode).connect(state.pitchGain).connect(state.audioCtx.destination);
+        state.source.connect(state.directGain).connect(state.masterGain).connect(state.audioCtx.destination);
+        state.source.connect(state.pitchNode).connect(state.pitchGain).connect(state.masterGain);
         state.audioReady = true;
         setStatus("準備OK。ピッチ変更は半音単位で使えます。");
       } catch (error) {
@@ -1000,10 +1031,9 @@
       const canvasStream = recCanvas.captureStream(30);
       let mediaStream = canvasStream;
 
-      if (state.audioReady) {
+      if (state.audioReady && state.masterGain) {
         const dest = state.audioCtx.createMediaStreamDestination();
-        state.directGain.connect(dest);
-        state.pitchGain.connect(dest);
+        state.masterGain.connect(dest);
         state.recAudioDest = dest;
         mediaStream = new MediaStream([...canvasStream.getTracks(), ...dest.stream.getTracks()]);
       }
@@ -1028,8 +1058,7 @@
       recAnimId = null;
       state.recorder.stop();
       if (state.recAudioDest) {
-        try { state.directGain.disconnect(state.recAudioDest); } catch (_) {}
-        try { state.pitchGain.disconnect(state.recAudioDest); } catch (_) {}
+        try { state.masterGain.disconnect(state.recAudioDest); } catch (_) {}
         state.recAudioDest = null;
       }
       els.recBtn.textContent = "● 録画開始";
