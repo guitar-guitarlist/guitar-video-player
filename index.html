@@ -354,6 +354,14 @@
       color: var(--accent);
     }
 
+    /* Recording */
+    .rec-active {
+      background: var(--danger) !important;
+      border-color: transparent !important;
+      color: #fff !important;
+      font-weight: 800;
+    }
+
     /* Zoom/pan */
     #mediaWrap {
       width: 100%;
@@ -403,6 +411,8 @@
         <button id="playBtn" class="primary" type="button">再生</button>
         <button id="muteBtn" type="button">ミュート</button>
       </div>
+
+      <button id="recBtn" type="button">● 録画開始</button>
 
       <div class="control-box volume-box">
         <div class="control-title">音量</div>
@@ -487,6 +497,7 @@
       clearLoop: $("clearLoop"),
       volume: $("volume"),
       volumeValue: $("volumeValue"),
+      recBtn: $("recBtn"),
       status: $("status")
     };
 
@@ -501,6 +512,10 @@
       youtubePlayer: null,
       youtubePlayerReady: false,
       youtubeState: -1,
+      recActive: false,
+      recorder: null,
+      recChunks: [],
+      recAudioDest: null,
       audioReady: false,
       audioCtx: null,
       source: null,
@@ -881,8 +896,109 @@
       }
     }
 
+    // ── Recording ───────────────────────────────────────────────
+    let recCanvas = null, recAnimId = null;
+
+    function recMimeType() {
+      const types = ["video/mp4;codecs=avc1,mp4a.40.2", "video/mp4",
+                     "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+      return types.find(t => MediaRecorder.isTypeSupported(t)) || "";
+    }
+
+    function drawRecFrame() {
+      const v = els.video;
+      const ctx = recCanvas.getContext("2d");
+      const cw = recCanvas.width, ch = recCanvas.height;
+      ctx.fillStyle = "#050607";
+      ctx.fillRect(0, 0, cw, ch);
+      if (v.readyState >= 2 && v.videoWidth && v.videoHeight) {
+        const r = Math.min(cw / v.videoWidth, ch / v.videoHeight);
+        const dw = v.videoWidth * r, dh = v.videoHeight * r;
+        const dx = (cw - dw) / 2, dy = (ch - dh) / 2;
+        ctx.save();
+        ctx.translate(cw / 2 + zoomState.panX, ch / 2 + zoomState.panY);
+        ctx.scale(zoomState.scale, zoomState.scale);
+        ctx.drawImage(v, dx - cw / 2, dy - ch / 2, dw, dh);
+        ctx.restore();
+      }
+      recAnimId = requestAnimationFrame(drawRecFrame);
+    }
+
+    async function startRecording() {
+      if (state.mode !== "local" || !els.video.src) {
+        setStatus("ローカル動画を読み込んでから録画してください。");
+        return;
+      }
+      await setupAudio();
+      if (state.audioCtx && state.audioCtx.state === "suspended") {
+        await state.audioCtx.resume();
+      }
+      const rect = els.stage.getBoundingClientRect();
+      recCanvas = document.createElement("canvas");
+      recCanvas.width  = Math.round(rect.width)  || 1280;
+      recCanvas.height = Math.round(rect.height) || 720;
+
+      const canvasStream = recCanvas.captureStream(30);
+      let mediaStream = canvasStream;
+
+      if (state.audioReady) {
+        const dest = state.audioCtx.createMediaStreamDestination();
+        state.directGain.connect(dest);
+        state.pitchGain.connect(dest);
+        state.recAudioDest = dest;
+        mediaStream = new MediaStream([...canvasStream.getTracks(), ...dest.stream.getTracks()]);
+      }
+
+      const mime = recMimeType();
+      state.recorder = new MediaRecorder(mediaStream, mime ? { mimeType: mime } : {});
+      state.recChunks = [];
+      state.recorder.ondataavailable = (e) => { if (e.data.size > 0) state.recChunks.push(e.data); };
+      state.recorder.onstop = finishRecording;
+      state.recorder.start(200);
+      state.recActive = true;
+      drawRecFrame();
+      els.recBtn.textContent = "■ 録画停止";
+      els.recBtn.classList.add("rec-active");
+      setStatus("録画中... もう一度押すと停止します。");
+    }
+
+    function stopRecording() {
+      if (!state.recActive) return;
+      state.recActive = false;
+      cancelAnimationFrame(recAnimId);
+      recAnimId = null;
+      state.recorder.stop();
+      if (state.recAudioDest) {
+        try { state.directGain.disconnect(state.recAudioDest); } catch (_) {}
+        try { state.pitchGain.disconnect(state.recAudioDest); } catch (_) {}
+        state.recAudioDest = null;
+      }
+      els.recBtn.textContent = "● 録画開始";
+      els.recBtn.classList.remove("rec-active");
+      setStatus("録画停止。ダウンロードを準備中...");
+    }
+
+    function finishRecording() {
+      const mime = state.recorder?.mimeType || "video/webm";
+      const ext  = mime.includes("mp4") ? "mp4" : "webm";
+      const blob = new Blob(state.recChunks, { type: mime });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = `guitar-rec.${ext}`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setStatus(`録画完了。${ext.toUpperCase()}でダウンロードしました。`);
+    }
+
+    els.recBtn.addEventListener("click", () => {
+      if (state.recActive) { stopRecording(); } else {
+        startRecording().catch(() => setStatus("録画を開始できませんでした。"));
+      }
+    });
+
     function loadFile(file) {
       if (!file) return;
+      if (state.recActive) stopRecording();
       setMode("local");
       if (state.youtubePlayerReady) state.youtubePlayer.pauseVideo();
       if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
