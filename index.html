@@ -994,50 +994,26 @@
     }
 
     // ── Instagram direct fetch ───────────────────────────────────
-    const IG_PROXIES = [
-      u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-      u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    ];
-
-    const IG_PATTERNS = [
-      /"video_url"\s*:\s*"([^"]+)"/,
-      /"playable_url"\s*:\s*"([^"]+)"/,
-      /"contentUrl"\s*:\s*"([^"]+)"/,
-      /property="og:video"\s+content="([^"]+)"/,
-      /property="og:video:secure_url"\s+content="([^"]+)"/,
-      /<video[^>]+src="(https:[^"]+\.mp4[^"]*)"/,
-    ];
-
-    function igDecodeUrl(raw) {
-      return raw
-        .replace(/\\u0026/g, "&").replace(/\\u002F/g, "/")
-        .replace(/\\u003C/g, "<").replace(/\\u003E/g, ">")
-        .replace(/\\\//g, "/").replace(/\\"/g, '"');
+    async function fetchViaCobalt(igUrl) {
+      const res = await fetch("https://api.cobalt.tools/", {
+        method: "POST",
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ url: igUrl, downloadMode: "auto" }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) throw new Error(`cobalt HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.status === "redirect" || data.status === "tunnel") return data.url;
+      if (data.status === "picker") {
+        const pick = data.picker?.find(p => p.type === "video") || data.picker?.[0];
+        if (pick?.url) return pick.url;
+      }
+      throw new Error(data.error?.code || "cobalt: no URL returned");
     }
 
     async function fetchInstagramVideoUrl(shortcode) {
-      const endpoints = [
-        `https://www.instagram.com/p/${shortcode}/embed/captioned/`,
-        `https://www.instagram.com/p/${shortcode}/embed/`,
-        `https://www.instagram.com/p/${shortcode}/`,
-      ];
-      for (const proxy of IG_PROXIES) {
-        for (const ep of endpoints) {
-          try {
-            const res = await fetch(proxy(ep), { signal: AbortSignal.timeout(12000) });
-            if (!res.ok) continue;
-            const html = await res.text();
-            for (const pat of IG_PATTERNS) {
-              const m = html.match(pat);
-              if (m) {
-                const url = igDecodeUrl(m[1]);
-                if (url.startsWith("http")) return url;
-              }
-            }
-          } catch (_) {}
-        }
-      }
-      throw new Error("動画URLを取得できませんでした");
+      const igUrl = `https://www.instagram.com/p/${shortcode}/`;
+      return fetchViaCobalt(igUrl);
     }
 
     async function loadInstagramDirect() {
