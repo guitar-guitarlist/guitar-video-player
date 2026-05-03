@@ -1,0 +1,1077 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Guitar Video Player</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101214;
+      --panel: #191c20;
+      --panel-2: #20242a;
+      --text: #f3f0e8;
+      --muted: #b9b1a3;
+      --line: #343a42;
+      --accent: #4fd1a5;
+      --accent-2: #f0b35a;
+      --danger: #ff7b7b;
+      --shadow: 0 16px 50px rgba(0, 0, 0, .35);
+      --radius: 8px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button.primary {
+      border-color: transparent;
+      background: var(--accent);
+      color: #06251c;
+      font-weight: 800;
+    }
+
+    button.warning {
+      border-color: rgba(240, 179, 90, .45);
+      color: var(--accent-2);
+    }
+
+    button.danger {
+      border-color: rgba(255, 123, 123, .45);
+      color: var(--danger);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .5;
+      transform: none;
+    }
+
+    .app {
+      width: min(1280px, 100%);
+      min-height: 100dvh;
+      padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+      display: grid;
+      grid-template-rows: minmax(220px, 1fr) auto;
+      gap: 12px;
+    }
+
+    .file-actions {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .file-label {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      border-radius: var(--radius);
+      background: var(--accent);
+      color: #06251c;
+      font-weight: 800;
+      font-size: 14px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .file-actions button,
+    .file-label {
+      min-height: 36px;
+    }
+
+    .file-label input {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .filename {
+      grid-column: 1 / -1;
+      max-width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #050607;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .stage.dragover {
+      border-color: var(--accent);
+      outline: 3px solid rgba(79, 209, 165, .22);
+    }
+
+    video,
+    .youtube-player,
+    #youtubePlayer {
+      width: 100%;
+      height: 100%;
+      max-height: calc(100dvh - 320px);
+      object-fit: contain;
+      background: #050607;
+    }
+
+    .youtube-player,
+    #youtubePlayer {
+      border: 0;
+      display: none;
+    }
+
+    .stage.youtube-mode video {
+      display: none;
+    }
+
+    .stage.youtube-mode .youtube-player,
+    .stage.youtube-mode #youtubePlayer {
+      display: block;
+    }
+
+    .youtube-input {
+      min-width: 0;
+      min-height: 36px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #111418;
+      color: var(--text);
+    }
+
+    .youtube-input::placeholder {
+      color: #817b72;
+    }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      text-align: center;
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    .empty[hidden],
+    .stage.has-media .empty {
+      display: none !important;
+    }
+
+    .empty strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    .controls {
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      padding: 12px;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .main-buttons,
+    .jump-grid,
+    .loop-grid,
+    .adjust-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .main-buttons {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .jump-grid {
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+    }
+
+    .loop-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .adjust-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .control-box {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #15181c;
+    }
+
+    .control-title {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .value {
+      min-width: 64px;
+      text-align: center;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .loop-on {
+      outline: 2px solid rgba(79, 209, 165, .45);
+    }
+
+    @media (max-width: 760px) {
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .app {
+        height: 100dvh;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        overflow: hidden;
+        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+      }
+
+      .file-actions {
+        grid-template-columns: auto 1fr auto;
+        order: -1;
+      }
+
+      .file-label,
+      .file-actions button {
+        min-height: 36px;
+      }
+
+      .filename {
+        flex-basis: 100%;
+        max-width: 100%;
+        font-size: 13px;
+        line-height: 1.2;
+      }
+
+      .stage {
+        flex: 0 0 clamp(150px, 30dvh, 240px);
+        min-height: 0;
+        height: auto;
+      }
+
+      video,
+      .youtube-player,
+      #youtubePlayer {
+        max-height: none;
+      }
+
+      .controls {
+        flex: 1 1 0;
+        height: 0;
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        gap: 8px;
+        padding: 8px 8px calc(24px + env(safe-area-inset-bottom));
+        -webkit-overflow-scrolling: touch;
+      }
+
+      button {
+        min-height: 40px;
+      }
+
+      .main-buttons {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .adjust-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .jump-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .loop-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .control-box {
+        padding: 8px;
+        gap: 6px;
+      }
+
+      .status {
+        font-size: 12px;
+      }
+
+      .timeline {
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+      }
+
+      .timeline input {
+        grid-column: 1 / -1;
+        grid-row: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section id="stage" class="stage" aria-label="動画プレイヤー">
+      <video id="video" playsinline preload="metadata"></video>
+      <div id="youtubePlayer" class="youtube-player"></div>
+      <div id="empty" class="empty">
+        <div>
+          <strong>動画を選択してください</strong>
+          PCではここにドラッグ&ドロップできます
+        </div>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="練習コントロール">
+      <div class="file-actions">
+        <label class="file-label">
+          動画を開く
+          <input id="fileInput" type="file" accept=".mp4,.m4v,.mov,.webm,.mp3,.wav,.m4a,video/mp4,video/*,audio/*">
+        </label>
+        <input id="youtubeUrl" class="youtube-input" type="url" inputmode="url" placeholder="YouTubeリンク">
+        <button id="loadYoutubeBtn" type="button">読込</button>
+        <div id="filename" class="filename">ファイル未選択</div>
+      </div>
+
+      <div class="timeline">
+        <span id="currentTime">0:00</span>
+        <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="再生位置">
+        <span id="duration">0:00</span>
+      </div>
+
+      <div class="main-buttons">
+        <button id="playBtn" class="primary" type="button">再生</button>
+        <button id="muteBtn" type="button">ミュート</button>
+      </div>
+
+      <div class="jump-grid" aria-label="戻る・進む">
+        <button type="button" data-jump="-1">-1秒</button>
+        <button type="button" data-jump="-3">-3秒</button>
+        <button type="button" data-jump="-5">-5秒</button>
+        <button type="button" data-jump="-10">-10秒</button>
+        <button type="button" data-jump="1">+1秒</button>
+        <button type="button" data-jump="3">+3秒</button>
+        <button type="button" data-jump="5">+5秒</button>
+        <button type="button" data-jump="10">+10秒</button>
+      </div>
+
+      <div class="adjust-grid">
+        <div class="control-box">
+          <div class="control-title">再生スピード</div>
+          <button id="speedDown" type="button">-</button>
+          <input id="speed" type="range" min="0.25" max="2" step="0.05" value="1" aria-label="再生スピード">
+          <button id="speedUp" type="button">+</button>
+          <div></div>
+          <div id="speedValue" class="value">1.00x</div>
+          <button id="speedReset" type="button">等速</button>
+        </div>
+
+        <div class="control-box">
+          <div class="control-title">ピッチ</div>
+          <button id="pitchDown" type="button">-</button>
+          <input id="pitch" type="range" min="-12" max="12" step="1" value="0" aria-label="ピッチ">
+          <button id="pitchUp" type="button">+</button>
+          <div></div>
+          <div id="pitchValue" class="value">0 半音</div>
+          <button id="pitchReset" type="button">原音</button>
+        </div>
+      </div>
+
+      <div class="loop-grid" aria-label="A-Bループ">
+        <button id="setA" type="button">Aを設定</button>
+        <button id="setB" type="button">Bを設定</button>
+        <button id="loopToggle" type="button">ループOFF</button>
+        <button id="clearLoop" class="danger" type="button">解除</button>
+      </div>
+
+      <div id="status" class="status">ピッチ変更は再生開始後に有効になります。</div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const els = {
+      fileInput: $("fileInput"),
+      youtubeUrl: $("youtubeUrl"),
+      loadYoutubeBtn: $("loadYoutubeBtn"),
+      filename: $("filename"),
+      stage: $("stage"),
+      video: $("video"),
+      youtubePlayer: $("youtubePlayer"),
+      empty: $("empty"),
+      playBtn: $("playBtn"),
+      muteBtn: $("muteBtn"),
+      seek: $("seek"),
+      currentTime: $("currentTime"),
+      duration: $("duration"),
+      speed: $("speed"),
+      speedValue: $("speedValue"),
+      speedDown: $("speedDown"),
+      speedUp: $("speedUp"),
+      speedReset: $("speedReset"),
+      pitch: $("pitch"),
+      pitchValue: $("pitchValue"),
+      pitchDown: $("pitchDown"),
+      pitchUp: $("pitchUp"),
+      pitchReset: $("pitchReset"),
+      setA: $("setA"),
+      setB: $("setB"),
+      loopToggle: $("loopToggle"),
+      clearLoop: $("clearLoop"),
+      status: $("status")
+    };
+
+    const state = {
+      mode: "local",
+      objectUrl: "",
+      seeking: false,
+      loopA: null,
+      loopB: null,
+      loopEnabled: false,
+      youtubeApiReady: false,
+      youtubePlayer: null,
+      youtubePlayerReady: false,
+      youtubeState: -1,
+      audioReady: false,
+      audioCtx: null,
+      source: null,
+      pitchNode: null,
+      silentGain: null,
+      directGain: null,
+      pitchGain: null
+    };
+
+    function workletUrl() {
+      const source = `
+        class PitchShifter extends AudioWorkletProcessor {
+          static get parameterDescriptors() {
+            return [{ name: "ratio", defaultValue: 1, minValue: 0.5, maxValue: 2 }];
+          }
+
+          constructor() {
+            super();
+            this.maxDelay = 0.12;
+            this.window = 0.08;
+            this.phase = 0;
+          }
+
+          triangle(x) {
+            return x < 0.5 ? x * 2 : (1 - x) * 2;
+          }
+
+          process(inputs, outputs, parameters) {
+            const input = inputs[0];
+            const output = outputs[0];
+            if (!input || !input[0]) return true;
+
+            const ratioParam = parameters.ratio;
+            const ratio = ratioParam.length ? ratioParam[0] : ratioParam;
+            const sampleRateLocal = sampleRate;
+            const windowSamples = Math.max(128, Math.floor(this.window * sampleRateLocal));
+            const baseDelay = Math.floor(this.maxDelay * sampleRateLocal);
+            const phaseStep = Math.abs(ratio - 1) / windowSamples;
+            const sign = ratio >= 1 ? 1 : -1;
+
+            if (!this.buffers || this.buffers.length !== input.length) {
+              this.size = 1;
+              while (this.size < baseDelay + windowSamples + 256) this.size *= 2;
+              this.mask = this.size - 1;
+              this.writeIndex = 0;
+              this.buffers = Array.from({ length: input.length }, () => new Float32Array(this.size));
+            }
+
+            for (let i = 0; i < output[0].length; i++) {
+              this.phase += phaseStep;
+              if (this.phase >= 1) this.phase -= 1;
+              const p1 = this.phase;
+              const p2 = (this.phase + 0.5) % 1;
+              const d1 = baseDelay + sign * p1 * windowSamples;
+              const d2 = baseDelay + sign * p2 * windowSamples;
+              const g1 = this.triangle(p1);
+              const g2 = this.triangle(p2);
+
+              for (let ch = 0; ch < output.length; ch++) {
+                const source = input[ch] || input[0];
+                const buffer = this.buffers[ch] || this.buffers[0];
+                buffer[this.writeIndex] = source[i] || 0;
+                const read1 = this.readDelay(buffer, d1);
+                const read2 = this.readDelay(buffer, d2);
+                output[ch][i] = (read1 * g1 + read2 * g2) * 0.92;
+              }
+
+              this.writeIndex = (this.writeIndex + 1) & this.mask;
+            }
+
+            return true;
+          }
+
+          readDelay(buffer, delay) {
+            const index = this.writeIndex - delay;
+            const i0 = Math.floor(index);
+            const frac = index - i0;
+            const a = buffer[i0 & this.mask];
+            const b = buffer[(i0 - 1) & this.mask];
+            return a + (b - a) * frac;
+          }
+        }
+
+        registerProcessor("pitch-shifter", PitchShifter);
+      `;
+      return URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    }
+
+    function formatTime(seconds) {
+      if (!Number.isFinite(seconds)) return "0:00";
+      const safe = Math.max(0, seconds);
+      const h = Math.floor(safe / 3600);
+      const m = Math.floor((safe % 3600) / 60);
+      const s = Math.floor(safe % 60).toString().padStart(2, "0");
+      return h ? `${h}:${m.toString().padStart(2, "0")}:${s}` : `${m}:${s}`;
+    }
+
+    function currentDuration() {
+      if (state.mode === "youtube" && state.youtubePlayerReady) {
+        return state.youtubePlayer.getDuration() || 0;
+      }
+      return els.video.duration || 0;
+    }
+
+    function currentTime() {
+      if (state.mode === "youtube" && state.youtubePlayerReady) {
+        return state.youtubePlayer.getCurrentTime() || 0;
+      }
+      return els.video.currentTime || 0;
+    }
+
+    function seekTo(time, allowSeekAhead = true) {
+      const target = clampTime(time);
+      if (state.mode === "youtube" && state.youtubePlayerReady) {
+        state.youtubePlayer.seekTo(target, allowSeekAhead);
+      } else if (els.video.src) {
+        els.video.currentTime = target;
+      }
+    }
+
+    function clampTime(time) {
+      const duration = currentDuration();
+      return Math.min(Math.max(0, time), duration || Number.MAX_SAFE_INTEGER);
+    }
+
+    function setStatus(text) {
+      els.status.textContent = text;
+    }
+
+    function updatePlayButton() {
+      if (state.mode === "youtube") {
+        els.playBtn.textContent = state.youtubeState === 1 ? "一時停止" : "再生";
+        return;
+      }
+      els.playBtn.textContent = els.video.paused ? "再生" : "一時停止";
+    }
+
+    function updateTimeline() {
+      const duration = currentDuration();
+      const time = currentTime();
+      if (!state.seeking && Number.isFinite(duration) && duration > 0) {
+        els.seek.value = String((time / duration) * 1000);
+      }
+      els.currentTime.textContent = formatTime(time);
+      els.duration.textContent = formatTime(duration);
+    }
+
+    function updateLoopUi() {
+      const a = state.loopA == null ? "Aを設定" : `A ${formatTime(state.loopA)}`;
+      const b = state.loopB == null ? "Bを設定" : `B ${formatTime(state.loopB)}`;
+      els.setA.textContent = a;
+      els.setB.textContent = b;
+      els.loopToggle.textContent = state.loopEnabled ? "ループON" : "ループOFF";
+      els.loopToggle.classList.toggle("loop-on", state.loopEnabled);
+      els.loopToggle.disabled = !(state.loopA != null && state.loopB != null && state.loopB > state.loopA);
+    }
+
+    function pitchRatio() {
+      return Math.pow(2, Number(els.pitch.value) / 12);
+    }
+
+    function updateSpeed() {
+      const speed = Number(els.speed.value);
+      if (state.mode === "youtube" && state.youtubePlayerReady) {
+        state.youtubePlayer.setPlaybackRate(speed);
+      } else {
+        els.video.playbackRate = speed;
+      }
+      els.speedValue.textContent = `${speed.toFixed(2)}x`;
+    }
+
+    function updatePitch() {
+      const semitones = Number(els.pitch.value);
+      els.pitchValue.textContent = `${semitones > 0 ? "+" : ""}${semitones} 半音`;
+      if (state.mode === "youtube") {
+        const shifted = semitones !== 0;
+        setStatus(shifted ? "YouTube動画ではピッチ変更は使えません。ローカル動画で使えます。" : "YouTube動画を読み込みました。速度変更、移動、A-Bループが使えます。");
+        return;
+      }
+      if (state.pitchNode) {
+        state.pitchNode.parameters.get("ratio").setTargetAtTime(pitchRatio(), state.audioCtx.currentTime, 0.01);
+      }
+      const shifted = semitones !== 0;
+      if (state.directGain && state.pitchGain) {
+        state.directGain.gain.setTargetAtTime(shifted ? 0 : 1, state.audioCtx.currentTime, 0.01);
+        state.pitchGain.gain.setTargetAtTime(shifted ? 1 : 0, state.audioCtx.currentTime, 0.01);
+      }
+      if (shifted && !state.audioReady) setStatus("再生ボタンを押すとピッチ変更が有効になります。");
+    }
+
+    async function setupAudio() {
+      if (state.audioReady) return;
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext || !window.AudioWorkletNode) {
+        setStatus("このブラウザではピッチ変更に対応していません。");
+        els.pitch.disabled = true;
+        return;
+      }
+
+      try {
+        state.audioCtx = new AudioContext();
+        await state.audioCtx.audioWorklet.addModule(workletUrl());
+        state.source = state.audioCtx.createMediaElementSource(els.video);
+        state.silentGain = state.audioCtx.createGain();
+        state.directGain = state.audioCtx.createGain();
+        state.pitchGain = state.audioCtx.createGain();
+        state.pitchNode = new AudioWorkletNode(state.audioCtx, "pitch-shifter", {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2]
+        });
+
+        state.silentGain.gain.value = 0;
+        state.directGain.gain.value = Number(els.pitch.value) === 0 ? 1 : 0;
+        state.pitchGain.gain.value = Number(els.pitch.value) === 0 ? 0 : 1;
+        state.pitchNode.parameters.get("ratio").value = pitchRatio();
+
+        state.source.connect(state.silentGain).connect(state.audioCtx.destination);
+        state.source.connect(state.directGain).connect(state.audioCtx.destination);
+        state.source.connect(state.pitchNode).connect(state.pitchGain).connect(state.audioCtx.destination);
+        state.audioReady = true;
+        setStatus("準備OK。ピッチ変更は半音単位で使えます。");
+      } catch (error) {
+        console.error(error);
+        setStatus("ピッチ変更の初期化に失敗しました。通常再生は使えます。");
+      }
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      const youtubeMode = mode === "youtube";
+      els.stage.classList.toggle("youtube-mode", youtubeMode);
+      els.pitch.disabled = youtubeMode;
+      els.pitchDown.disabled = youtubeMode;
+      els.pitchUp.disabled = youtubeMode;
+      els.pitchReset.disabled = youtubeMode;
+      updatePlayButton();
+      updateTimeline();
+    }
+
+    async function togglePlay() {
+      if (state.mode === "youtube") {
+        if (!state.youtubePlayerReady) return;
+        if (state.youtubeState === 1) {
+          state.youtubePlayer.pauseVideo();
+        } else {
+          state.youtubePlayer.playVideo();
+        }
+        return;
+      }
+      if (!els.video.src) return;
+      await setupAudio();
+      if (state.audioCtx && state.audioCtx.state === "suspended") {
+        await state.audioCtx.resume();
+      }
+      if (els.video.paused) {
+        await els.video.play();
+      } else {
+        els.video.pause();
+      }
+    }
+
+    function extractYoutubeId(value) {
+      const text = value.trim();
+      if (!text) return "";
+      const bare = text.match(/^[a-zA-Z0-9_-]{11}$/);
+      if (bare) return text;
+      try {
+        const url = new URL(text);
+        if (url.hostname.includes("youtu.be")) return url.pathname.slice(1).split("/")[0];
+        if (url.searchParams.get("v")) return url.searchParams.get("v");
+        const embed = url.pathname.match(/\/(?:embed|shorts|live)\/([a-zA-Z0-9_-]{11})/);
+        if (embed) return embed[1];
+      } catch (_) {
+        return "";
+      }
+      return "";
+    }
+
+    function loadYoutubeApi() {
+      if (state.youtubeApiReady || window.YT?.Player) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        window.onYouTubeIframeAPIReady = () => {
+          state.youtubeApiReady = true;
+          resolve();
+        };
+        const script = document.createElement("script");
+        script.src = "https://www.youtube.com/iframe_api";
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    async function loadYoutube() {
+      const videoId = extractYoutubeId(els.youtubeUrl.value);
+      if (!videoId) {
+        setStatus("YouTubeリンクを確認してください。");
+        return;
+      }
+
+      if (!navigator.onLine && location.protocol === "file:") {
+        setStatus("YouTube動画の読み込みにはインターネット接続が必要です。");
+      }
+
+      await loadYoutubeApi();
+      setMode("youtube");
+      els.video.pause();
+      els.video.removeAttribute("src");
+      els.video.load();
+      els.empty.hidden = true;
+      els.stage.classList.add("has-media");
+      els.filename.textContent = `YouTube: ${videoId}`;
+      state.loopA = null;
+      state.loopB = null;
+      state.loopEnabled = false;
+      state.youtubePlayerReady = false;
+      state.youtubeState = -1;
+      updateLoopUi();
+
+      const options = {
+        videoId,
+        playerVars: {
+          playsinline: 1,
+          rel: 0,
+          modestbranding: 1
+        },
+        events: {
+          onReady: () => {
+            state.youtubePlayerReady = true;
+            updateSpeed();
+            updateTimeline();
+            setStatus("YouTube動画を読み込みました。ピッチ変更はローカル動画のみ対応です。");
+          },
+          onStateChange: (event) => {
+            state.youtubeState = event.data;
+            updatePlayButton();
+          },
+          onError: (event) => {
+            const message = event.data === 153
+              ? "YouTubeエラー153: HTMLを直接開く file:// では再生できません。ローカルサーバーで開いてください。"
+              : "YouTube動画を読み込めませんでした。URLや公開設定を確認してください。";
+            setStatus(message);
+          }
+        }
+      };
+
+      if (state.youtubePlayer) {
+        state.youtubePlayerReady = true;
+        state.youtubePlayer.loadVideoById(videoId);
+        updateSpeed();
+        setStatus("YouTube動画を読み込みました。ピッチ変更はローカル動画のみ対応です。");
+      } else {
+        state.youtubePlayer = new YT.Player("youtubePlayer", options);
+      }
+    }
+
+    function loadFile(file) {
+      if (!file) return;
+      setMode("local");
+      if (state.youtubePlayerReady) state.youtubePlayer.pauseVideo();
+      if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+      state.objectUrl = URL.createObjectURL(file);
+      els.video.src = state.objectUrl;
+      els.video.load();
+      els.filename.textContent = file.name;
+      els.empty.hidden = true;
+      els.stage.classList.add("has-media");
+      state.loopA = null;
+      state.loopB = null;
+      state.loopEnabled = false;
+      updateLoopUi();
+      setStatus("動画を読み込みました。");
+    }
+
+    function jump(seconds) {
+      if (state.mode === "local" && !els.video.src) return;
+      if (state.mode === "youtube" && !state.youtubePlayerReady) return;
+      seekTo(currentTime() + seconds);
+      updateTimeline();
+    }
+
+    function nudgeRange(input, amount) {
+      const value = Number(input.value) + amount;
+      const min = Number(input.min);
+      const max = Number(input.max);
+      input.value = String(Math.min(max, Math.max(min, value)));
+      input.dispatchEvent(new Event("input"));
+    }
+
+    els.fileInput.addEventListener("change", (event) => loadFile(event.target.files[0]));
+    els.loadYoutubeBtn.addEventListener("click", () => {
+      loadYoutube().catch(() => setStatus("YouTubeの読み込みに失敗しました。インターネット接続を確認してください。"));
+    });
+    els.youtubeUrl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        els.loadYoutubeBtn.click();
+      }
+    });
+
+    ["dragenter", "dragover"].forEach((name) => {
+      els.stage.addEventListener(name, (event) => {
+        event.preventDefault();
+        els.stage.classList.add("dragover");
+      });
+    });
+
+    ["dragleave", "drop"].forEach((name) => {
+      els.stage.addEventListener(name, () => els.stage.classList.remove("dragover"));
+    });
+
+    els.stage.addEventListener("drop", (event) => {
+      event.preventDefault();
+      loadFile(event.dataTransfer.files[0]);
+    });
+
+    els.playBtn.addEventListener("click", () => {
+      togglePlay().catch(() => setStatus("再生できませんでした。別の動画で試してください。"));
+    });
+
+    els.video.addEventListener("click", () => {
+      togglePlay().catch(() => setStatus("再生できませんでした。"));
+    });
+
+    els.video.addEventListener("play", updatePlayButton);
+    els.video.addEventListener("pause", updatePlayButton);
+    els.video.addEventListener("loadedmetadata", updateTimeline);
+    els.video.addEventListener("loadeddata", () => {
+      els.empty.hidden = true;
+      els.stage.classList.add("has-media");
+    });
+    els.video.addEventListener("error", () => {
+      if (state.mode !== "local") return;
+      const error = els.video.error;
+      const detail = error && error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+        ? "このMP4の形式をブラウザが再生できない可能性があります。H.264/AACのMP4で試してください。"
+        : "動画を読み込めませんでした。";
+      setStatus(detail);
+      els.empty.hidden = false;
+      els.stage.classList.remove("has-media");
+    });
+    els.video.addEventListener("timeupdate", () => {
+      if (state.loopEnabled && state.loopA != null && state.loopB != null && currentTime() >= state.loopB) {
+        seekTo(state.loopA);
+      }
+      updateTimeline();
+    });
+
+    els.seek.addEventListener("input", () => {
+      state.seeking = true;
+      const duration = currentDuration();
+      els.currentTime.textContent = formatTime((Number(els.seek.value) / 1000) * duration);
+    });
+
+    els.seek.addEventListener("change", () => {
+      const duration = currentDuration();
+      seekTo((Number(els.seek.value) / 1000) * duration);
+      state.seeking = false;
+      updateTimeline();
+    });
+
+    document.querySelectorAll("[data-jump]").forEach((button) => {
+      button.addEventListener("click", () => jump(Number(button.dataset.jump)));
+    });
+
+    els.speed.addEventListener("input", updateSpeed);
+    els.speedDown.addEventListener("click", () => nudgeRange(els.speed, -0.05));
+    els.speedUp.addEventListener("click", () => nudgeRange(els.speed, 0.05));
+    els.speedReset.addEventListener("click", () => {
+      els.speed.value = "1";
+      updateSpeed();
+    });
+
+    els.pitch.addEventListener("input", updatePitch);
+    els.pitchDown.addEventListener("click", () => nudgeRange(els.pitch, -1));
+    els.pitchUp.addEventListener("click", () => nudgeRange(els.pitch, 1));
+    els.pitchReset.addEventListener("click", () => {
+      els.pitch.value = "0";
+      updatePitch();
+    });
+
+    els.setA.addEventListener("click", () => {
+      state.loopA = currentTime();
+      if (state.loopB != null && state.loopB <= state.loopA) state.loopB = null;
+      updateLoopUi();
+    });
+
+    els.setB.addEventListener("click", () => {
+      state.loopB = currentTime();
+      if (state.loopA == null || state.loopB <= state.loopA) {
+        state.loopA = null;
+        state.loopEnabled = false;
+        setStatus("BはAより後ろに設定してください。");
+      }
+      updateLoopUi();
+    });
+
+    els.loopToggle.addEventListener("click", () => {
+      state.loopEnabled = !state.loopEnabled;
+      if (state.loopEnabled && currentTime() > state.loopB) {
+        seekTo(state.loopA);
+      }
+      updateLoopUi();
+    });
+
+    els.clearLoop.addEventListener("click", () => {
+      state.loopA = null;
+      state.loopB = null;
+      state.loopEnabled = false;
+      updateLoopUi();
+    });
+
+    els.muteBtn.addEventListener("click", () => {
+      if (state.mode === "youtube" && state.youtubePlayerReady) {
+        if (state.youtubePlayer.isMuted()) {
+          state.youtubePlayer.unMute();
+          els.muteBtn.textContent = "ミュート";
+        } else {
+          state.youtubePlayer.mute();
+          els.muteBtn.textContent = "ミュート解除";
+        }
+        return;
+      }
+      els.video.muted = !els.video.muted;
+      els.muteBtn.textContent = els.video.muted ? "ミュート解除" : "ミュート";
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.target.matches("input")) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        togglePlay().catch(() => {});
+      }
+      if (event.key === "ArrowLeft") jump(-3);
+      if (event.key === "ArrowRight") jump(3);
+    });
+
+    setInterval(() => {
+      if (state.mode === "youtube" && state.youtubePlayerReady) {
+        if (state.loopEnabled && state.loopA != null && state.loopB != null && currentTime() >= state.loopB) {
+          seekTo(state.loopA);
+        }
+        updateTimeline();
+      }
+    }, 250);
+
+    updateSpeed();
+    updatePitch();
+    updateTimeline();
+    updateLoopUi();
+  </script>
+</body>
+</html>
