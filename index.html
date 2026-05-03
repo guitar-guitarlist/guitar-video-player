@@ -996,25 +996,47 @@
     }
 
     // ── Instagram direct fetch ───────────────────────────────────
+    // cobalt public instances — tried in order, auth-requiring ones are skipped
+    const COBALT_INSTANCES = [
+      "https://cobalt.synth.mom",
+      "https://cobalt.privacyredirect.com",
+      "https://cob.adybestia.com",
+      "https://cobalt.canine.tools",
+      "https://api.cobalt.tools",
+    ];
+
+    function isAuthError(code) {
+      return typeof code === "string" && code.includes("auth");
+    }
+
     async function fetchViaCobalt(igUrl) {
-      const res = await fetch("https://api.cobalt.tools/", {
-        method: "POST",
-        headers: { "Accept": "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ url: igUrl }),
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!res.ok) {
-        let msg = `cobalt HTTP ${res.status}`;
-        try { const e = await res.json(); msg = e.error?.code || msg; } catch (_) {}
-        throw new Error(msg);
+      const lastErrors = [];
+      for (const base of COBALT_INSTANCES) {
+        try {
+          const res = await fetch(`${base}/`, {
+            method: "POST",
+            headers: { "Accept": "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ url: igUrl }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (res.status === 401 || res.status === 403) continue;
+          let data;
+          try { data = await res.json(); } catch (_) { lastErrors.push(`${base}: parse error`); continue; }
+          const errCode = data.error?.code;
+          if (isAuthError(errCode)) continue;
+          if (!res.ok) { lastErrors.push(errCode || `HTTP ${res.status}`); continue; }
+          if (data.status === "redirect" || data.status === "tunnel") return data.url;
+          if (data.status === "picker") {
+            const pick = data.picker?.find(p => p.type === "video") || data.picker?.[0];
+            if (pick?.url) return pick.url;
+          }
+          if (errCode) { lastErrors.push(errCode); continue; }
+          lastErrors.push("no URL");
+        } catch (e) {
+          lastErrors.push(`${base}: ${e.message}`);
+        }
       }
-      const data = await res.json();
-      if (data.status === "redirect" || data.status === "tunnel") return data.url;
-      if (data.status === "picker") {
-        const pick = data.picker?.find(p => p.type === "video") || data.picker?.[0];
-        if (pick?.url) return pick.url;
-      }
-      throw new Error(data.error?.code || "cobalt: no URL returned");
+      throw new Error(lastErrors.at(-1) || "全インスタンスで失敗");
     }
 
     async function fetchInstagramVideoUrl(shortcode) {
