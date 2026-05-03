@@ -179,9 +179,17 @@
     }
 
     .stage.youtube-mode video { display: none; }
-
-    .stage.youtube-mode .youtube-player,
     .stage.youtube-mode #youtubePlayer { display: block; }
+
+    .stage.instagram-mode video,
+    .stage.instagram-mode #youtubePlayer { display: none; }
+    .stage.instagram-mode #instagramPlayer { display: block; }
+
+    #instagramPlayer iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
 
     /* ── Empty state ── */
     .empty {
@@ -380,6 +388,7 @@
       <div id="mediaWrap">
         <video id="video" playsinline preload="metadata"></video>
         <div id="youtubePlayer" class="youtube-player"></div>
+        <div id="instagramPlayer" class="youtube-player"></div>
       </div>
       <div id="empty" class="empty">
         <div>
@@ -396,7 +405,7 @@
           動画を開く
           <input id="fileInput" type="file" accept=".mp4,.m4v,.mov,.webm,.mp3,.wav,.m4a,video/mp4,video/*,audio/*">
         </label>
-        <input id="youtubeUrl" class="youtube-input" type="url" inputmode="url" placeholder="YouTubeリンク">
+        <input id="youtubeUrl" class="youtube-input" type="url" inputmode="url" placeholder="YouTube / Instagramリンク">
         <button id="loadYoutubeBtn" type="button">読込</button>
         <div id="filename" class="filename">ファイル未選択</div>
       </div>
@@ -475,6 +484,7 @@
       stage: $("stage"),
       video: $("video"),
       youtubePlayer: $("youtubePlayer"),
+      instagramPlayer: $("instagramPlayer"),
       empty: $("empty"),
       playBtn: $("playBtn"),
       muteBtn: $("muteBtn"),
@@ -773,17 +783,28 @@
 
     function setMode(mode) {
       state.mode = mode;
-      const youtubeMode = mode === "youtube";
-      els.stage.classList.toggle("youtube-mode", youtubeMode);
-      els.pitch.disabled = youtubeMode;
-      els.pitchDown.disabled = youtubeMode;
-      els.pitchUp.disabled = youtubeMode;
-      els.pitchReset.disabled = youtubeMode;
+      els.stage.classList.toggle("youtube-mode",   mode === "youtube");
+      els.stage.classList.toggle("instagram-mode", mode === "instagram");
+
+      const noAudio    = mode === "youtube" || mode === "instagram";
+      const instagram  = mode === "instagram";
+
+      [els.pitch, els.pitchDown, els.pitchUp, els.pitchReset].forEach(el => {
+        el.disabled = noAudio;
+      });
+
+      // Instagram: no JS API — disable all playback controls
+      [els.playBtn, els.muteBtn, els.seek, els.speed, els.speedDown, els.speedUp,
+       els.speedReset, els.setA, els.setB, els.loopToggle, els.clearLoop, els.volume].forEach(el => {
+        el.disabled = instagram;
+      });
+
       updatePlayButton();
       updateTimeline();
     }
 
     async function togglePlay() {
+      if (state.mode === "instagram") return;
       if (state.mode === "youtube") {
         if (!state.youtubePlayerReady) return;
         if (state.youtubeState === 1) {
@@ -803,6 +824,44 @@
       } else {
         els.video.pause();
       }
+    }
+
+    function extractInstagramId(value) {
+      const text = value.trim();
+      try {
+        const url = new URL(text);
+        if (!url.hostname.includes("instagram.com") && !url.hostname.includes("instagr.am")) return "";
+        const m = url.pathname.match(/\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+        return m ? m[2] : "";
+      } catch (_) { return ""; }
+    }
+
+    function isInstagramUrl(value) {
+      return value.includes("instagram.com") || value.includes("instagr.am");
+    }
+
+    async function loadInstagram() {
+      const shortcode = extractInstagramId(els.youtubeUrl.value);
+      if (!shortcode) {
+        setStatus("InstagramのURLを確認してください（投稿・リール対応）。");
+        return;
+      }
+      if (state.youtubePlayerReady) state.youtubePlayer.pauseVideo();
+      els.video.pause();
+      els.video.removeAttribute("src");
+      els.video.load();
+      els.empty.hidden = true;
+      els.stage.classList.add("has-media");
+      els.filename.textContent = `Instagram: ${shortcode}`;
+      state.loopA = null; state.loopB = null; state.loopEnabled = false;
+      updateLoopUi();
+      setMode("instagram");
+
+      // Build embed iframe (logged-in users see full player; others see preview)
+      els.instagramPlayer.innerHTML =
+        `<iframe src="https://www.instagram.com/p/${shortcode}/embed/" allowtransparency="true" scrolling="no" allowfullscreen></iframe>`;
+
+      setStatus("Instagram動画を読み込みました。再生はプレイヤー内で操作してください（ピッチ・速度・ループは使用不可）。");
     }
 
     function extractYoutubeId(value) {
@@ -1016,6 +1075,7 @@
     }
 
     function jump(seconds) {
+      if (state.mode === "instagram") return;
       if (state.mode === "local" && !els.video.src) return;
       if (state.mode === "youtube" && !state.youtubePlayerReady) return;
       seekTo(currentTime() + seconds);
@@ -1032,7 +1092,11 @@
 
     els.fileInput.addEventListener("change", (event) => loadFile(event.target.files[0]));
     els.loadYoutubeBtn.addEventListener("click", () => {
-      loadYoutube().catch(() => setStatus("YouTubeの読み込みに失敗しました。インターネット接続を確認してください。"));
+      if (isInstagramUrl(els.youtubeUrl.value)) {
+        loadInstagram().catch(() => setStatus("Instagramの読み込みに失敗しました。"));
+      } else {
+        loadYoutube().catch(() => setStatus("YouTubeの読み込みに失敗しました。インターネット接続を確認してください。"));
+      }
     });
     els.youtubeUrl.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
