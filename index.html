@@ -331,6 +331,15 @@
       font-size: 13px;
     }
 
+    /* Volume box: title row full-width, then slider + value */
+    .volume-box {
+      grid-template-columns: 1fr auto;
+    }
+
+    .volume-box .control-title {
+      grid-column: 1 / -1;
+    }
+
     /* A-B loop: ON state — prominent green like primary button */
     .loop-on {
       background: var(--accent) !important;
@@ -379,6 +388,12 @@
       <div class="main-buttons">
         <button id="playBtn" class="primary" type="button">再生</button>
         <button id="muteBtn" type="button">ミュート</button>
+      </div>
+
+      <div class="control-box volume-box">
+        <div class="control-title">音量</div>
+        <input id="volume" type="range" min="0" max="100" step="1" value="100" aria-label="音量">
+        <div id="volumeValue" class="value">100%</div>
       </div>
 
       <div class="jump-grid" aria-label="戻る・進む">
@@ -456,6 +471,8 @@
       setB: $("setB"),
       loopToggle: $("loopToggle"),
       clearLoop: $("clearLoop"),
+      volume: $("volume"),
+      volumeValue: $("volumeValue"),
       status: $("status")
     };
 
@@ -634,6 +651,30 @@
       return Math.pow(2, -Number(els.pitch.value) / 12);
     }
 
+    function updateVolume() {
+      const vol = Number(els.volume.value);
+      els.volumeValue.textContent = `${vol}%`;
+      if (state.mode === "youtube" && state.youtubePlayerReady) {
+        state.youtubePlayer.setVolume(vol);
+        if (vol === 0) {
+          state.youtubePlayer.mute();
+          els.muteBtn.textContent = "ミュート解除";
+        } else if (state.youtubePlayer.isMuted()) {
+          state.youtubePlayer.unMute();
+          els.muteBtn.textContent = "ミュート";
+        }
+      } else {
+        els.video.volume = vol / 100;
+        if (vol === 0) {
+          els.video.muted = true;
+          els.muteBtn.textContent = "ミュート解除";
+        } else if (els.video.muted) {
+          els.video.muted = false;
+          els.muteBtn.textContent = "ミュート";
+        }
+      }
+    }
+
     function updateSpeed() {
       const speed = Number(els.speed.value);
       if (state.mode === "youtube" && state.youtubePlayerReady) {
@@ -799,6 +840,7 @@
           onReady: () => {
             state.youtubePlayerReady = true;
             updateSpeed();
+            updateVolume();
             updateTimeline();
             setStatus("YouTube動画を読み込みました。ピッチ変更はローカル動画のみ対応です。");
           },
@@ -934,6 +976,7 @@
       button.addEventListener("click", () => jump(Number(button.dataset.jump)));
     });
 
+    els.volume.addEventListener("input", updateVolume);
     els.speed.addEventListener("input", updateSpeed);
     els.speedDown.addEventListener("click", () => nudgeRange(els.speed, -0.05));
     els.speedUp.addEventListener("click", () => nudgeRange(els.speed, 0.05));
@@ -1015,6 +1058,7 @@
       }
     }, 250);
 
+    updateVolume();
     updateSpeed();
     updatePitch();
     updateTimeline();
