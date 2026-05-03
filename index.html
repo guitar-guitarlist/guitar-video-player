@@ -21,16 +21,14 @@
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
-    html,
-    body {
-      min-height: 100%;
+    html, body {
+      height: 100%;
       margin: 0;
       background: var(--bg);
       color: var(--text);
+      overflow: hidden;
     }
 
     body {
@@ -38,10 +36,7 @@
       justify-content: center;
     }
 
-    button,
-    input {
-      font: inherit;
-    }
+    button, input { font: inherit; }
 
     button {
       min-height: 44px;
@@ -53,9 +48,7 @@
       touch-action: manipulation;
     }
 
-    button:active {
-      transform: translateY(1px);
-    }
+    button:active { transform: translateY(1px); }
 
     button.primary {
       border-color: transparent;
@@ -80,13 +73,146 @@
       transform: none;
     }
 
+    /* ── App shell ── */
     .app {
       width: min(1280px, 100%);
-      min-height: 100dvh;
-      padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+      height: 100dvh;
+      display: flex;
+      gap: 10px;
+      padding:
+        max(10px, env(safe-area-inset-top))
+        max(10px, env(safe-area-inset-right))
+        max(10px, env(safe-area-inset-bottom))
+        max(10px, env(safe-area-inset-left));
+    }
+
+    /* ── Portrait: video fixed on top, controls scroll below ── */
+    @media (orientation: portrait) {
+      .app {
+        flex-direction: column;
+      }
+
+      .stage {
+        flex: 0 0 clamp(180px, 35dvh, 280px);
+      }
+
+      .controls {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: calc(16px + env(safe-area-inset-bottom));
+      }
+
+      .timeline {
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+      }
+
+      .timeline input[type="range"] {
+        grid-column: 1 / -1;
+        grid-row: 1;
+      }
+
+      .jump-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .loop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .adjust-grid { grid-template-columns: 1fr; }
+
+      button { min-height: 42px; }
+    }
+
+    /* ── Landscape: video fixed on left, controls scroll on right ── */
+    @media (orientation: landscape) {
+      .app {
+        flex-direction: row;
+      }
+
+      .stage {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
+      .controls {
+        flex: 0 0 clamp(280px, 38vw, 420px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .jump-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .loop-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .adjust-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      button { min-height: 38px; }
+      .main-buttons button { min-height: 44px; }
+    }
+
+    /* ── Stage ── */
+    .stage {
+      position: relative;
       display: grid;
-      grid-template-rows: minmax(220px, 1fr) auto;
-      gap: 12px;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #050607;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .stage.dragover {
+      border-color: var(--accent);
+      outline: 3px solid rgba(79, 209, 165, .22);
+    }
+
+    video, .youtube-player, #youtubePlayer {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #050607;
+    }
+
+    .youtube-player, #youtubePlayer {
+      border: 0;
+      display: none;
+    }
+
+    .stage.youtube-mode video { display: none; }
+
+    .stage.youtube-mode .youtube-player,
+    .stage.youtube-mode #youtubePlayer { display: block; }
+
+    /* ── Empty state ── */
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      text-align: center;
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    .empty[hidden], .stage.has-media .empty { display: none !important; }
+
+    .empty strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+      font-size: 20px;
+    }
+
+    /* ── Controls panel ── */
+    .controls {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      padding: 12px;
     }
 
     .file-actions {
@@ -111,10 +237,7 @@
       white-space: nowrap;
     }
 
-    .file-actions button,
-    .file-label {
-      min-height: 36px;
-    }
+    .file-actions button, .file-label { min-height: 36px; }
 
     .file-label input {
       position: absolute;
@@ -131,49 +254,7 @@
       white-space: nowrap;
       text-overflow: ellipsis;
       color: var(--muted);
-      font-size: 14px;
-    }
-
-    .stage {
-      position: relative;
-      display: grid;
-      place-items: center;
-      min-height: 220px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: #050607;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-
-    .stage.dragover {
-      border-color: var(--accent);
-      outline: 3px solid rgba(79, 209, 165, .22);
-    }
-
-    video,
-    .youtube-player,
-    #youtubePlayer {
-      width: 100%;
-      height: 100%;
-      max-height: calc(100dvh - 320px);
-      object-fit: contain;
-      background: #050607;
-    }
-
-    .youtube-player,
-    #youtubePlayer {
-      border: 0;
-      display: none;
-    }
-
-    .stage.youtube-mode video {
-      display: none;
-    }
-
-    .stage.youtube-mode .youtube-player,
-    .stage.youtube-mode #youtubePlayer {
-      display: block;
+      font-size: 13px;
     }
 
     .youtube-input {
@@ -186,41 +267,7 @@
       color: var(--text);
     }
 
-    .youtube-input::placeholder {
-      color: #817b72;
-    }
-
-    .empty {
-      position: absolute;
-      inset: 0;
-      display: grid;
-      place-items: center;
-      padding: 28px;
-      text-align: center;
-      color: var(--muted);
-      pointer-events: none;
-    }
-
-    .empty[hidden],
-    .stage.has-media .empty {
-      display: none !important;
-    }
-
-    .empty strong {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--text);
-      font-size: 20px;
-    }
-
-    .controls {
-      display: grid;
-      gap: 10px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--panel);
-      padding: 12px;
-    }
+    .youtube-input::placeholder { color: #817b72; }
 
     .timeline {
       display: grid;
@@ -237,29 +284,21 @@
       accent-color: var(--accent);
     }
 
-    .main-buttons,
-    .jump-grid,
-    .loop-grid,
-    .adjust-grid {
+    .main-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .jump-grid, .loop-grid, .adjust-grid {
       display: grid;
       gap: 8px;
     }
 
-    .main-buttons {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .jump-grid {
-      grid-template-columns: repeat(8, minmax(0, 1fr));
-    }
-
-    .loop-grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
-    .adjust-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+    /* Default (wide desktop) */
+    .jump-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .loop-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .adjust-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
     .control-box {
       display: grid;
@@ -292,109 +331,18 @@
       font-size: 13px;
     }
 
+    /* A-B loop: ON state — prominent green like primary button */
     .loop-on {
-      outline: 2px solid rgba(79, 209, 165, .45);
+      background: var(--accent) !important;
+      color: #06251c !important;
+      border-color: transparent !important;
+      font-weight: 800;
     }
 
-    @media (max-width: 760px) {
-      html,
-      body {
-        height: 100%;
-        overflow: hidden;
-      }
-
-      .app {
-        height: 100dvh;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        overflow: hidden;
-        padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
-      }
-
-      .file-actions {
-        grid-template-columns: auto 1fr auto;
-        order: -1;
-      }
-
-      .file-label,
-      .file-actions button {
-        min-height: 36px;
-      }
-
-      .filename {
-        flex-basis: 100%;
-        max-width: 100%;
-        font-size: 13px;
-        line-height: 1.2;
-      }
-
-      .stage {
-        flex: 0 0 clamp(150px, 30dvh, 240px);
-        min-height: 0;
-        height: auto;
-      }
-
-      video,
-      .youtube-player,
-      #youtubePlayer {
-        max-height: none;
-      }
-
-      .controls {
-        flex: 1 1 0;
-        height: 0;
-        min-height: 0;
-        max-height: none;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        touch-action: pan-y;
-        gap: 8px;
-        padding: 8px 8px calc(24px + env(safe-area-inset-bottom));
-        -webkit-overflow-scrolling: touch;
-      }
-
-      button {
-        min-height: 40px;
-      }
-
-      .main-buttons {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .adjust-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .jump-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 6px;
-      }
-
-      .loop-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 6px;
-      }
-
-      .control-box {
-        padding: 8px;
-        gap: 6px;
-      }
-
-      .status {
-        font-size: 12px;
-      }
-
-      .timeline {
-        grid-template-columns: 1fr auto;
-        gap: 6px;
-      }
-
-      .timeline input {
-        grid-column: 1 / -1;
-        grid-row: 1;
-      }
+    /* A/B point set indicator */
+    .loop-point-set {
+      border-color: rgba(79, 209, 165, .55);
+      color: var(--accent);
     }
   </style>
 </head>
@@ -406,7 +354,7 @@
       <div id="empty" class="empty">
         <div>
           <strong>動画を選択してください</strong>
-          PCではここにドラッグ&ドロップできます
+          PCではここにドラッグ&amp;ドロップできます
         </div>
       </div>
     </section>
@@ -469,7 +417,7 @@
       <div class="loop-grid" aria-label="A-Bループ">
         <button id="setA" type="button">Aを設定</button>
         <button id="setB" type="button">Bを設定</button>
-        <button id="loopToggle" type="button">ループOFF</button>
+        <button id="loopToggle" type="button">ループ: OFF</button>
         <button id="clearLoop" class="danger" type="button">解除</button>
       </div>
 
@@ -670,17 +618,20 @@
     }
 
     function updateLoopUi() {
-      const a = state.loopA == null ? "Aを設定" : `A ${formatTime(state.loopA)}`;
-      const b = state.loopB == null ? "Bを設定" : `B ${formatTime(state.loopB)}`;
-      els.setA.textContent = a;
-      els.setB.textContent = b;
-      els.loopToggle.textContent = state.loopEnabled ? "ループON" : "ループOFF";
+      const aSet = state.loopA != null;
+      const bSet = state.loopB != null;
+      els.setA.textContent = aSet ? `A ${formatTime(state.loopA)}` : "Aを設定";
+      els.setB.textContent = bSet ? `B ${formatTime(state.loopB)}` : "Bを設定";
+      els.setA.classList.toggle("loop-point-set", aSet);
+      els.setB.classList.toggle("loop-point-set", bSet);
+      els.loopToggle.textContent = state.loopEnabled ? "ループ: ON" : "ループ: OFF";
       els.loopToggle.classList.toggle("loop-on", state.loopEnabled);
-      els.loopToggle.disabled = !(state.loopA != null && state.loopB != null && state.loopB > state.loopA);
+      els.loopToggle.disabled = !(aSet && bSet && state.loopB > state.loopA);
     }
 
     function pitchRatio() {
-      return Math.pow(2, Number(els.pitch.value) / 12);
+      // Negate semitones so that positive slider value = higher pitch
+      return Math.pow(2, -Number(els.pitch.value) / 12);
     }
 
     function updateSpeed() {
@@ -843,11 +794,7 @@
 
       const options = {
         videoId,
-        playerVars: {
-          playsinline: 1,
-          rel: 0,
-          modestbranding: 1
-        },
+        playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
         events: {
           onReady: () => {
             state.youtubePlayerReady = true;
