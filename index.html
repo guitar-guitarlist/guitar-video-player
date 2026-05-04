@@ -350,6 +350,32 @@
 
     .loop-grid button { font-size: 13px; }
 
+    /* ── 採譜 ── */
+    .transcribe-box { display: flex; flex-direction: column; gap: 6px; }
+    #transcribeToggle { width: 100%; }
+    .note-display {
+      display: flex; align-items: baseline; gap: 10px;
+      min-height: 2.8rem;
+    }
+    .note-jp {
+      font-size: 2.4rem; font-weight: 800;
+      color: var(--accent); line-height: 1;
+      min-width: 2.8rem; text-align: center;
+    }
+    .note-west { font-size: 1.05rem; color: var(--fg); }
+    .note-freq { font-size: 0.72rem; color: var(--muted); }
+    .note-history {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      min-height: 22px; overflow-x: auto;
+    }
+    .note-history span {
+      background: var(--border); padding: 2px 7px;
+      border-radius: 4px; font-size: 12px; white-space: nowrap;
+    }
+    .note-history span.nh-latest {
+      background: var(--accent); color: #06251c; font-weight: 700;
+    }
+
     /* A-B loop: ON state — prominent green like primary button */
     .loop-on {
       background: var(--accent) !important;
@@ -473,6 +499,17 @@
 
       <button id="igDirectBtn" type="button" style="display:none">▶ 全機能で再生（動画を取得）</button>
 
+      <div class="control-box transcribe-box">
+        <div class="control-title">採譜（リアルタイム）</div>
+        <button id="transcribeToggle" type="button">♪ 採譜開始</button>
+        <div class="note-display">
+          <span id="noteJp" class="note-jp">--</span>
+          <span id="noteWest" class="note-west"></span>
+          <span id="noteFreq" class="note-freq"></span>
+        </div>
+        <div id="noteHistory" class="note-history"></div>
+      </div>
+
       <div id="status" class="status">ピッチ変更は再生開始後に有効になります。</div>
     </section>
   </main>
@@ -513,6 +550,11 @@
       volumeValue: $("volumeValue"),
       recBtn: $("recBtn"),
       igDirectBtn: $("igDirectBtn"),
+      transcribeToggle: $("transcribeToggle"),
+      noteJp: $("noteJp"),
+      noteWest: $("noteWest"),
+      noteFreq: $("noteFreq"),
+      noteHistory: $("noteHistory"),
       status: $("status")
     };
 
@@ -1095,6 +1137,137 @@
 
     els.igDirectBtn.addEventListener("click", () => {
       loadInstagramDirect().catch(() => setStatus("動画の取得に失敗しました。"));
+    });
+
+    // ── 採譜（リアルタイムピッチ検出） ─────────────────────────────
+    const NOTES_JP = [
+      {jp:"ド", w:"C"}, {jp:"ド#", w:"C#"},
+      {jp:"レ", w:"D"}, {jp:"レ#", w:"D#"},
+      {jp:"ミ", w:"E"},
+      {jp:"ファ", w:"F"}, {jp:"ファ#", w:"F#"},
+      {jp:"ソ", w:"G"}, {jp:"ソ#", w:"G#"},
+      {jp:"ラ", w:"A"}, {jp:"ラ#", w:"A#"},
+      {jp:"シ", w:"B"},
+    ];
+
+    let transcribeActive = false;
+    let transcribeRafId = null;
+    let noteAnalyser = null;
+    const noteHist = [];
+    let tLastMidi = -1;
+    let tSameCount = 0;
+
+    function freqToNoteInfo(freq) {
+      if (!freq || freq < 60 || freq > 1500) return null;
+      const midi = Math.round(12 * Math.log2(freq / 440) + 69);
+      const idx = ((midi % 12) + 12) % 12;
+      const octave = Math.floor(midi / 12) - 1;
+      return { ...NOTES_JP[idx], octave, midi };
+    }
+
+    // Normalized autocorrelation (NSDF) — robust against harmonics
+    function detectPitch(buf, sampleRate) {
+      const SIZE = buf.length;
+      let rms = 0;
+      for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+      if (Math.sqrt(rms / SIZE) < 0.015) return -1; // silence
+
+      const minLag = Math.floor(sampleRate / 1400); // ~1400Hz max
+      const maxLag = Math.min(Math.floor(sampleRate / 60), SIZE - 1); // ~60Hz min
+
+      let bestNsdf = 0.5, bestLag = -1; // threshold 0.5
+      for (let lag = minLag; lag <= maxLag; lag++) {
+        let num = 0, denom = 0;
+        for (let i = 0; i < SIZE - lag; i++) {
+          num   += buf[i] * buf[i + lag];
+          denom += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
+        }
+        const nsdf = denom > 0 ? (2 * num) / denom : 0;
+        if (nsdf > bestNsdf) { bestNsdf = nsdf; bestLag = lag; }
+      }
+      if (bestLag < 0) return -1;
+
+      // Parabolic interpolation for sub-sample precision
+      const y1 = bestLag > 0 ? /* dummy */ bestNsdf : bestNsdf; // unused below
+      void y1;
+      return sampleRate / bestLag;
+    }
+
+    function transcribeLoop() {
+      if (!transcribeActive || !noteAnalyser) return;
+      const buf = new Float32Array(noteAnalyser.fftSize);
+      noteAnalyser.getFloatTimeDomainData(buf);
+      const freq = detectPitch(buf, state.audioCtx.sampleRate);
+      const note = freqToNoteInfo(freq);
+
+      if (note) {
+        if (note.midi === tLastMidi) {
+          tSameCount++;
+        } else {
+          tLastMidi = note.midi;
+          tSameCount = 1;
+        }
+        if (tSameCount >= 4) { // 4連続同音で確定
+          els.noteJp.textContent = note.jp;
+          els.noteWest.textContent = `${note.w}${note.octave}`;
+          els.noteFreq.textContent = `${Math.round(freq)} Hz`;
+          if (noteHist.at(-1) !== note.jp) {
+            noteHist.push(note.jp);
+            if (noteHist.length > 20) noteHist.shift();
+            els.noteHistory.innerHTML = noteHist
+              .map((n, i) => `<span class="${i === noteHist.length - 1 ? "nh-latest" : ""}">${n}</span>`)
+              .join("");
+            els.noteHistory.scrollLeft = els.noteHistory.scrollWidth;
+          }
+        }
+      } else {
+        els.noteFreq.textContent = "";
+      }
+      transcribeRafId = requestAnimationFrame(transcribeLoop);
+    }
+
+    async function toggleTranscribe() {
+      if (transcribeActive) {
+        transcribeActive = false;
+        cancelAnimationFrame(transcribeRafId);
+        els.transcribeToggle.textContent = "♪ 採譜開始";
+        els.transcribeToggle.classList.remove("rec-active");
+        return;
+      }
+      if (state.mode === "youtube") {
+        setStatus("YouTubeは採譜に非対応です（音声アクセス不可）。");
+        return;
+      }
+      if (!state.audioReady) {
+        await setupAudio().catch(() => {});
+      }
+      if (!state.audioReady) {
+        setStatus("音声の初期化に失敗しました。動画を再生してから試してください。");
+        return;
+      }
+      if (state.audioCtx.state === "suspended") await state.audioCtx.resume();
+
+      if (!noteAnalyser) {
+        noteAnalyser = state.audioCtx.createAnalyser();
+        noteAnalyser.fftSize = 2048;
+        noteAnalyser.smoothingTimeConstant = 0;
+        state.masterGain.connect(noteAnalyser);
+      }
+
+      transcribeActive = true;
+      noteHist.length = 0;
+      tLastMidi = -1; tSameCount = 0;
+      els.noteJp.textContent = "…";
+      els.noteWest.textContent = "";
+      els.noteFreq.textContent = "";
+      els.noteHistory.innerHTML = "";
+      els.transcribeToggle.textContent = "■ 採譜停止";
+      els.transcribeToggle.classList.add("rec-active");
+      transcribeLoop();
+    }
+
+    els.transcribeToggle.addEventListener("click", () => {
+      toggleTranscribe().catch(() => setStatus("採譜を開始できませんでした。"));
     });
 
     // ── Recording ───────────────────────────────────────────────
