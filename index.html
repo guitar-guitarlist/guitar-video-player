@@ -166,14 +166,18 @@
       outline: 3px solid rgba(79, 209, 165, .22);
     }
 
-    video, .youtube-player, #youtubePlayer {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
+    video {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      display: block;
       background: #050607;
     }
 
     .youtube-player, #youtubePlayer {
+      width: 100%;
+      height: 100%;
       border: 0;
       display: none;
     }
@@ -389,6 +393,9 @@
 
     /* Zoom/pan */
     #mediaWrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
       width: 100%;
       height: 100%;
       transform-origin: center center;
@@ -504,7 +511,7 @@
 
 
       <div id="status" class="status">ピッチ変更は再生開始後に有効になります。</div>
-      <div class="build-time">更新: 2026-05-05 11:05 JST</div>
+      <div class="build-time">更新: 2026-05-04 21:30 JST</div>
     </section>
   </main>
 
