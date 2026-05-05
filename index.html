@@ -1017,61 +1017,20 @@
     }
 
     // ── Instagram direct fetch ───────────────────────────────────
-    // Fallback hardcoded cobalt instances
-    const COBALT_FALLBACK = [
-      "https://cobalt.synth.mom",
-      "https://cobalt.privacyredirect.com",
-      "https://dwnld.nichlov.com",
-      "https://cobalt.api.timelessnesses.me",
-      "https://cobalt.darkness.services",
-      "https://cobalt.cadoth.net",
-    ];
-
-    async function getCobaltInstances() {
-      try {
-        const r = await fetch("https://instances.cobalt.tools/instances.json",
-          { signal: AbortSignal.timeout(5000) });
-        if (r.ok) {
-          const list = await r.json();
-          const arr = Array.isArray(list) ? list : (list.instances || []);
-          const urls = arr
-            .filter(i => i.cors === 0 || i.cors == null)
-            .map(i => (i.api || i.url || "").replace(/\/$/, ""))
-            .filter(u => u.startsWith("https://"));
-          if (urls.length) return [...new Set([...urls, ...COBALT_FALLBACK])];
-        }
-      } catch (_) {}
-      return COBALT_FALLBACK;
-    }
-
-    function isAuthErr(code) {
-      return typeof code === "string" && code.includes("auth");
-    }
+    // 自前のCloudflare Worker経由でcobaltにアクセス
+    const MY_WORKER = "https://ig-proxy.casiopeakazumi.workers.dev/";
 
     async function fetchViaCobalt(igUrl) {
-      const instances = await getCobaltInstances();
-      for (const base of instances) {
-        try {
-          const res = await fetch(`${base}/`, {
-            method: "POST",
-            headers: { "Accept": "application/json", "Content-Type": "application/json" },
-            body: JSON.stringify({ url: igUrl }),
-            signal: AbortSignal.timeout(12000),
-          });
-          if (res.status === 401 || res.status === 403) continue;
-          let data;
-          try { data = await res.json(); } catch (_) { continue; }
-          const errCode = data.error?.code;
-          if (isAuthErr(errCode)) continue;
-          if (!res.ok) continue;
-          if (data.status === "redirect" || data.status === "tunnel") return data.url;
-          if (data.status === "picker") {
-            const pick = data.picker?.find(p => p.type === "video") || data.picker?.[0];
-            if (pick?.url) return pick.url;
-          }
-        } catch (_) { /* network error → try next */ }
-      }
-      throw new Error("自動取得失敗");
+      const res = await fetch(MY_WORKER, {
+        method: "POST",
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ url: igUrl }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.url) return data.url;
+      throw new Error(data.error || "動画URLを取得できませんでした");
     }
 
     // Load a direct video URL (used by both auto-fetch and manual input)
