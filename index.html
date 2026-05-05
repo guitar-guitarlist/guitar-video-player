@@ -390,6 +390,13 @@
 
     .stage.zoomed { cursor: grab; }
     .stage.dragging { cursor: grabbing; }
+
+    /* 縦長動画: portrait orientation でステージを大きく */
+    @media (orientation: portrait) {
+      .stage.portrait-video {
+        flex: 0 0 clamp(240px, 55dvh, 480px);
+      }
+    }
   </style>
 </head>
 <body>
@@ -418,6 +425,14 @@
         <input id="youtubeUrl" class="youtube-input" type="url" inputmode="url" placeholder="YouTube / Instagramリンク">
         <button id="loadYoutubeBtn" type="button">読込</button>
         <div id="filename" class="filename">ファイル未選択</div>
+        <button id="igDirectBtn" type="button" style="display:none">▶ 全機能で再生（動画を取得）</button>
+        <div id="igManualSection" class="ig-manual" style="display:none">
+          <p class="control-hint">自動取得に失敗した場合は、<a href="https://cobalt.tools" target="_blank" rel="noopener">cobalt.tools</a> でInstagramのURLを入力し、表示されたリンクをコピーして貼り付けてください。</p>
+          <div class="ig-manual-row">
+            <input id="igManualUrl" type="url" placeholder="動画の直接URLを貼り付け">
+            <button id="igManualLoad" type="button">再生</button>
+          </div>
+        </div>
       </div>
 
       <div class="timeline">
@@ -479,19 +494,9 @@
         <button id="clearLoop" class="danger" type="button">解除</button>
       </div>
 
-      <button id="igDirectBtn" type="button" style="display:none">▶ 全機能で再生（動画を取得）</button>
-
-      <div id="igManualSection" class="control-box ig-manual" style="display:none">
-        <div class="control-title">手動で直接URLを入力</div>
-        <p class="control-hint">自動取得に失敗した場合は、<a href="https://cobalt.tools" target="_blank" rel="noopener">cobalt.tools</a> でInstagramのURLを入力し、表示されたリンクをコピーして貼り付けてください。</p>
-        <div class="ig-manual-row">
-          <input id="igManualUrl" type="url" placeholder="動画の直接URLを貼り付け">
-          <button id="igManualLoad" type="button">再生</button>
-        </div>
-      </div>
 
 
-<div id="status" class="status">ピッチ変更は再生開始後に有効になります。</div>
+      <div id="status" class="status">ピッチ変更は再生開始後に有効になります。</div>
     </section>
   </main>
 
@@ -1274,7 +1279,13 @@
 
     els.video.addEventListener("play", updatePlayButton);
     els.video.addEventListener("pause", updatePlayButton);
-    els.video.addEventListener("loadedmetadata", updateTimeline);
+    els.video.addEventListener("loadedmetadata", () => {
+      updateTimeline();
+      // 縦長動画を検出してクラスを付与 & ズームリセット
+      const portrait = els.video.videoHeight > els.video.videoWidth;
+      els.stage.classList.toggle("portrait-video", portrait);
+      resetZoom();
+    });
     els.video.addEventListener("loadeddata", () => {
       els.empty.hidden = true;
       els.stage.classList.add("has-media");
