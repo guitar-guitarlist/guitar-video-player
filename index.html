@@ -441,9 +441,10 @@
         <div id="filename" class="filename">ファイル未選択</div>
         <button id="igDirectBtn" type="button" style="display:none">▶ 全機能で再生（動画を取得）</button>
         <div id="igManualSection" class="ig-manual" style="display:none">
-          <p class="control-hint">自動取得に失敗した場合は、<a href="https://cobalt.tools" target="_blank" rel="noopener">cobalt.tools</a> でInstagramのURLを入力し、表示されたリンクをコピーして貼り付けてください。</p>
+          <button id="igCobaltBtn" type="button" class="warning">① cobalt.tools を開く（URLコピー済み）</button>
+          <p class="control-hint">cobalt.toolsで貼り付け→ダウンロードリンクをコピー→②に貼り付け</p>
           <div class="ig-manual-row">
-            <input id="igManualUrl" type="url" placeholder="動画の直接URLを貼り付け">
+            <input id="igManualUrl" type="url" placeholder="② 動画URLを貼り付けて再生">
             <button id="igManualLoad" type="button">再生</button>
           </div>
         </div>
@@ -511,7 +512,7 @@
 
 
       <div id="status" class="status">ピッチ変更は再生開始後に有効になります。</div>
-      <div class="build-time">更新: 2026-05-05 11:00 JST</div>
+      <div class="build-time">更新: 2026-05-05 12:10 JST</div>
     </section>
   </main>
 
@@ -1089,6 +1090,12 @@
       updateTimeline();
     }
 
+    function openCobaltWithUrl() {
+      const igUrl = state.instagramOrigUrl || `https://www.instagram.com/p/${state.instagramShortcode}/`;
+      navigator.clipboard.writeText(igUrl).catch(() => {});
+      window.open("https://cobalt.tools", "_blank", "noopener");
+    }
+
     async function loadInstagramDirect() {
       const shortcode = state.instagramShortcode;
       if (!shortcode) return;
@@ -1101,7 +1108,8 @@
         applyInstagramVideoUrl(videoUrl, shortcode);
       } catch (_) {
         els.igManualSection.style.display = "";
-        setStatus("自動取得に失敗しました。下の手順で手動取得してください。");
+        setStatus("自動取得できません。① cobalt.toolsを開いてURLを取得 → ②に貼り付け");
+        openCobaltWithUrl();
       } finally {
         els.igDirectBtn.disabled = false;
       }
@@ -1110,9 +1118,11 @@
     els.igDirectBtn.addEventListener("click", () => {
       loadInstagramDirect().catch(() => {
         els.igManualSection.style.display = "";
-        setStatus("自動取得に失敗しました。手動でURLを入力してください。");
+        setStatus("自動取得できません。① cobalt.toolsを開いてURLを取得 → ②に貼り付け");
       });
     });
+
+    $("igCobaltBtn").addEventListener("click", openCobaltWithUrl);
 
     els.igManualLoad.addEventListener("click", () => {
       const url = els.igManualUrl.value.trim();
